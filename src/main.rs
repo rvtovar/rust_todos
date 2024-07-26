@@ -23,7 +23,7 @@ fn main() {
 
     if let Some(description) = cli.add {
         let todo = Todo::add(&conn, &description).expect("Failed to add todo");
-        println!("{}", format!("Added: {}: {}", todo.id, todo.description).blue());
+        println!("{}", format!("Added: {}: {}", todo.id, todo.description).yellow());
     } else if cli.list {
         let todos = Todo::list(&conn).expect("Failed to list todos");
         for todo in todos {
