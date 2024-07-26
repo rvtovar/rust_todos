@@ -31,12 +31,13 @@ impl Todo {
         Ok(())
     }
 
-    pub fn add(conn: &Connection, description: &str) -> Result<()> {
+    pub fn add(conn: &Connection, description: &str) -> Result<Todo> {
         conn.execute(
             "INSERT INTO todos (description, status) VALUES (?1, ?2)",
             params![description, false],
         )?;
-        Ok(())
+        let id = conn.last_insert_rowid() as i32;
+        Ok(Todo::new(id, description.to_string(), false))
     }
 
     pub fn list(conn: &Connection) -> Result<Vec<Todo>> {
@@ -51,9 +52,17 @@ impl Todo {
         Ok(todos)
     }
 
-    pub fn update(conn: &Connection, id: i32, status: bool) -> Result<()> {
-        conn.execute("UPDATE todos SET status = ?1 WHERE id = ?2", params![status, id])?;
-        Ok(())
+    pub fn update(conn: &Connection, id: i32, status: bool) -> Result<Todo> {
+        conn.execute(
+            "UPDATE todos SET status = ?1 WHERE id = ?2",
+            params![status, id],
+        )?;
+        let mut stmt = conn.prepare("SELECT id, description, status FROM todos WHERE id = ?1")?;
+        let todo = stmt.query_row(params![id], |row| {
+            Ok(Todo::new(row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
+
+        Ok(todo)
     }
 
     pub fn delete(conn: &Connection, id: i32) -> Result<()> {
@@ -63,7 +72,7 @@ impl Todo {
 }
 
 pub fn connect() -> Result<Connection> {
-    let conn = Connection::open("todos.db")?;
+    let conn = Connection::open("todos.sqlite")?;
     Todo::create_table(&conn)?;
     Ok(conn)
 }

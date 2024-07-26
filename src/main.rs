@@ -1,39 +1,47 @@
-// use clap::{App, Arg, SubCommand};
+use clap::Parser;
+use colored::*;
 use todos::{connect, Todo};
 
+#[derive(Parser)]
+#[command(name = "Todo", version = "1.0", about = "Manages your todos")]
+struct Cli {
+    #[arg(short, long, help = "Add a new todo item")]
+    add: Option<String>,
+    #[arg(short, long, help = "List all todo items")]
+    list: bool,
+    #[arg(short, long, help = "Mark a todo item as complete")]
+    complete: Option<i32>,
+    #[arg(short, long, help = "Reopen a completed todo item")]
+    reopen: Option<i32>,
+    #[arg(short, long, help = "Delete a todo item")]
+    delete: Option<i32>,
+}
+
 fn main() {
-    // let matches = App::new("Todo CLI")
-    //     .version("1.0")
-    //     .author("Author Name <email@example.com>")
-    //     .about("Manages your todos")
-    //     .subcommand(
-    //         SubCommand::with_name("add")
-    //             .about("Adds a new todo")
-    //             .arg(Arg::with_name("DESCRIPTION").required(true)),
-    //     )
-    //     .subcommand(SubCommand::with_name("list").about("Lists all todos"))
-    //     .subcommand(
-    //         SubCommand::with_name("delete")
-    //             .about("Deletes a todo")
-    //             .arg(Arg::with_name("ID").required(true)),
-    //     )
-    //     .get_matches();
-    //
-    // let conn = connect().expect("Failed to establish database connection");
-    //
-    // if let Some(matches) = matches.subcommand_matches("add") {
-    //     if let Some(description) = matches.value_of("DESCRIPTION") {
-    //         Todo::add(&conn, description).expect("Failed to add todo");
-    //     }
-    // } else if let Some(_) = matches.subcommand_matches("list") {
-    //     let todos = Todo::list(&conn).expect("Failed to list todos");
-    //     for todo in todos {
-    //         println!("{}: {}", todo.id, todo.description);
-    //     }
-    // } else if let Some(matches) = matches.subcommand_matches("delete") {
-    //     if let Some(id) = matches.value_of("ID") {
-    //         let id: i32 = id.parse().expect("ID must be a number");
-    //         Todo::delete(&conn, id).expect("Failed to delete todo");
-    //     }
-    // }
+    let cli = Cli::parse();
+    let conn = connect().expect("Failed to establish database connection");
+
+    if let Some(description) = cli.add {
+        let todo = Todo::add(&conn, &description).expect("Failed to add todo");
+        println!("{}", format!("Added: {}: {}", todo.id, todo.description).blue());
+    } else if cli.list {
+        let todos = Todo::list(&conn).expect("Failed to list todos");
+        for todo in todos {
+            let msg = if todo.status {
+                format!("{}: {}", todo.id, todo.description.chars().map(|c| format!("\u{0336}{}", c)).collect::<String>()).red()
+            } else {
+                format!("{}: {}", todo.id, todo.description).green()
+            };
+            println!("{}", msg);
+        }
+    } else if let Some(id) = cli.complete {
+        let todo = Todo::update(&conn, id, true).expect("Failed to update todo");
+        println!("{}", format!("Completed: {}: {}", todo.id, todo.description).purple());
+    } else if let Some(id) = cli.reopen {
+        let todo = Todo::update(&conn, id, false).expect("Failed to update todo");
+        println!("{}", format!("Reopened: {}: {}", todo.id, todo.description).blue());
+    } else if let Some(id) = cli.delete {
+        Todo::delete(&conn, id).expect("Failed to delete todo");
+        println!("{}", format!("Deleted: {}", id).red());
+    }
 }
