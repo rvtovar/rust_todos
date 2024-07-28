@@ -17,15 +17,16 @@ struct Cli {
     delete: Option<i32>,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
-    let conn = connect().expect("Failed to establish database connection");
+    let pool = connect().await.expect("Failed to establish database connection");
 
     if let Some(description) = cli.add {
-        let todo = Todo::add(&conn, &description).expect("Failed to add todo");
+        let todo = Todo::add(&pool, &description).await.expect("Failed to add todo");
         println!("{}", format!("Added: {}: {}", todo.id, todo.description).yellow());
     } else if cli.list {
-        let todos = Todo::list(&conn).expect("Failed to list todos");
+        let todos = Todo::list(&pool).await.expect("Failed to list todos");
         for todo in todos {
             let msg = if todo.status {
                 format!("{}: {}", todo.id, todo.description.chars().map(|c| format!("\u{0336}{}", c)).collect::<String>()).red()
@@ -35,13 +36,13 @@ fn main() {
             println!("{}", msg);
         }
     } else if let Some(id) = cli.complete {
-        let todo = Todo::update(&conn, id, true).expect("Failed to update todo");
+        let todo = Todo::update(&pool, id, true).await.expect("Failed to update todo");
         println!("{}", format!("Completed: {}: {}", todo.id, todo.description).purple());
     } else if let Some(id) = cli.reopen {
-        let todo = Todo::update(&conn, id, false).expect("Failed to update todo");
-        println!("{}", format!("Reopened: {}: {}", todo.id, todo.description).blue());
+        let todo = Todo::update(&pool, id, false).await.expect("Failed to update todo");
+        println!("{}", format!("Reopened: {}: {}", todo.id, todo.description).purple());
     } else if let Some(id) = cli.delete {
-        Todo::delete(&conn, id).expect("Failed to delete todo");
+        Todo::delete(&pool, id).await.expect("Failed to delete todo");
         println!("{}", format!("Deleted: {}", id).red());
     }
 }

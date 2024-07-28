@@ -1,8 +1,7 @@
-/*
-Todos Structures for A todo App from command line
- */
-
-use rusqlite::{params, Connection, Result};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Result};
+use sqlx::query;
+use dotenv::dotenv;
+use std::env;
 
 pub struct Todo {
     pub id: i32,
@@ -19,60 +18,71 @@ impl Todo {
         }
     }
 
-    pub fn create_table(conn: &Connection) -> Result<()> {
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS todos (
-                id INTEGER PRIMARY KEY,
-                description TEXT NOT NULL,
-                status BOOLEAN NOT NULL
-            )",
-            [],
-        )?;
+    pub async fn create_table(pool: &Pool<Postgres>) -> Result<()> {
+        query!(
+        "CREATE TABLE IF NOT EXISTS todos (
+            id SERIAL PRIMARY KEY,
+            description TEXT NOT NULL,
+            status BOOLEAN NOT NULL
+        )"
+    )
+            .execute(pool)
+            .await?;
         Ok(())
     }
 
-    pub fn add(conn: &Connection, description: &str) -> Result<Todo> {
-        conn.execute(
-            "INSERT INTO todos (description, status) VALUES (?1, ?2)",
-            params![description, false],
-        )?;
-        let id = conn.last_insert_rowid() as i32;
-        Ok(Todo::new(id, description.to_string(), false))
+    pub async fn add(pool: &Pool<Postgres>, description: &str) -> Result<Todo> {
+        let rec = query!(
+            "INSERT INTO todos (description, status) VALUES ($1, $2) RETURNING id, description, status",
+            description,
+            false
+        )
+            .fetch_one(pool)
+            .await?;
+        Ok(Todo::new(rec.id, rec.description, rec.status))
     }
 
-    pub fn list(conn: &Connection) -> Result<Vec<Todo>> {
-        let mut stmt = conn.prepare("SELECT id, description, status FROM todos")?;
-        let todo_iter = stmt.query_map([], |row| {
-            Ok(Todo::new(row.get(0)?, row.get(1)?, row.get(2)?))
-        })?;
-        let mut todos = Vec::new();
-        for todo in todo_iter {
-            todos.push(todo?);
-        }
-        Ok(todos)
+    pub async fn list(pool: &Pool<Postgres>) -> Result<Vec<Todo>> {
+        let recs = query!(
+            "SELECT id, description, status FROM todos"
+        )
+            .fetch_all(pool)
+            .await?;
+        Ok(recs.into_iter().map(|rec| Todo::new(rec.id, rec.description, rec.status)).collect())
     }
 
-    pub fn update(conn: &Connection, id: i32, status: bool) -> Result<Todo> {
-        conn.execute(
-            "UPDATE todos SET status = ?1 WHERE id = ?2",
-            params![status, id],
-        )?;
-        let mut stmt = conn.prepare("SELECT id, description, status FROM todos WHERE id = ?1")?;
-        let todo = stmt.query_row(params![id], |row| {
-            Ok(Todo::new(row.get(0)?, row.get(1)?, row.get(2)?))
-        })?;
-
-        Ok(todo)
+    pub async fn update(pool: &Pool<Postgres>, id: i32, status: bool) -> Result<Todo> {
+        let rec = query!(
+            "UPDATE todos SET status = $1 WHERE id = $2 RETURNING id, description, status",
+            status,
+            id
+        )
+            .fetch_one(pool)
+            .await?;
+        Ok(Todo::new(rec.id, rec.description, rec.status))
     }
 
-    pub fn delete(conn: &Connection, id: i32) -> Result<()> {
-        conn.execute("DELETE FROM todos WHERE id = ?1", params![id])?;
+    pub async fn delete(pool: &Pool<Postgres>, id: i32) -> Result<()> {
+        query!(
+            "DELETE FROM todos WHERE id = $1",
+            id
+        )
+            .execute(pool)
+            .await?;
         Ok(())
     }
 }
 
-pub fn connect() -> Result<Connection> {
-    let conn = Connection::open("todos.sqlite")?;
-    Todo::create_table(&conn)?;
-    Ok(conn)
+pub async fn connect() -> Result<Pool<Postgres>> {
+    dotenv().ok();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await?;
+
+    // Ensure the table is created before any other operations
+    Todo::create_table(&pool).await?;
+
+    Ok(pool)
 }
